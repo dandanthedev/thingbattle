@@ -204,7 +204,7 @@ async function get(item) {
         return dbCache[item];
     }
 
-    const data = await fs.promises.readFile(`db.json`);
+    const data = await fs.promises.readFile(`/data/db.json`);
     const json = JSON.parse(data);
 
     dbCache[item] = json[item] || undefined;
@@ -214,7 +214,7 @@ async function get(item) {
 
 async function set(item, value) {
     dbCache[item] = value;
-    await fs.promises.writeFile(`db.json`, JSON.stringify(dbCache));
+    await fs.promises.writeFile(`/data/db.json`, JSON.stringify(dbCache));
 }
 
 //cors
