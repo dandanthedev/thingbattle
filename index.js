@@ -318,8 +318,11 @@ async function processQueue() {
 
 }
 
-if (!fs.existsSync(`db.json`)) {
-    fs.writeFileSync(`db.json`, JSON.stringify({}));
+if (!fs.existsSync('/data')) {
+    fs.mkdirSync('/data');
+}
+if (!fs.existsSync('/data/db.json')) {
+    fs.writeFileSync('/data/db.json', JSON.stringify({}));
 }
 
 
