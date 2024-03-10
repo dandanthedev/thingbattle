@@ -197,28 +197,18 @@ const things = [
 
 let queue = [];
 
-const dbCache = {};
-let dbCacheLast = new Date();
 
 async function get(item) {
-    let json = {};
-    if (new Date() - dbCacheLast > 1000) {
-        const data = await fs.promises.readFile(`/data/db.json`);
-        json = JSON.parse(data);
-        dbCacheLast = new Date();
-    } else {
-        json = dbCache;
-    }
-
-
-
-
+    const data = await fs.promises.readFile(`/data/db.json`);
+    const json = JSON.parse(data);
     return json[item] || 0;
 }
 
 async function set(item, value) {
-    dbCache[item] = value;
-    await fs.promises.writeFile(`/data/db.json`, JSON.stringify(dbCache));
+    const data = await fs.promises.readFile(`/data/db.json`);
+    const json = JSON.parse(data);
+    json[item] = value;
+    await fs.promises.writeFile(`/data/db.json`, JSON.stringify(json));
 
 }
 
