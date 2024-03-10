@@ -170,7 +170,7 @@ const things = [
     "tree",
     "truck",
     "tv",
-    "twezzers",
+    "tweezers",
     "twister",
     "vase",
     "video games",
