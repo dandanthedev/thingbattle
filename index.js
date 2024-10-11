@@ -237,7 +237,8 @@ async function set(item, value) {
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*'); //TODO: change to only allow certain origins
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, captcha-response, Token');
+    res.header('Access-Control-Expose-Headers', 'Token');
 
     next();
 });
@@ -257,14 +258,33 @@ app.get("/random", (req, res) => {
 
     const jwt = signJWT({ options: [item1, item2], id });
 
-    res.send([item1, item2, jwt]);
+    res.header('Token', `${jwt}`);
+    res.send([item1, item2]);
 
 });
 
-app.post("/choice", async (req, res) => {
-    const { choice } = req.body;
+
+
+app.get("/results", async (req, res) => {
+    let results = [];
+    for (const thing of things) {
+        const votes = await get(thing) || 0;
+        const games = await get(`${thing}-games`) || 0;
+        const percentage = Math.round((votes / games) * 100) || 0;
+        results.push({ thing, votes, games, percentage });
+    }
+
+    //sort results by highest percentage
+    results.sort((a, b) => b.percentage - a.percentage);
+    res.json(results);
+});
+
+app.post("/:choice", async (req, res) => {
+    const choice = req.params.choice;
     const captchaResponse = req.headers['captcha-response'];
-    const jwt = req.headers['Authorization']?.split(" ")[1];
+    const jwt = req.headers['authorization']?.split(" ")[1];
+
+    console.log(choice, captchaResponse, jwt);
 
     if (!choice || !captchaResponse || !jwt) return res.status(400).json({ error: "Missing parameters" });
 
@@ -328,20 +348,6 @@ app.post("/choice", async (req, res) => {
 
     res.send([chosenPercentage, otherPercentage]);
 
-});
-
-app.get("/results", async (req, res) => {
-    let results = [];
-    for (const thing of things) {
-        const votes = await get(thing) || 0;
-        const games = await get(`${thing}-games`) || 0;
-        const percentage = Math.round((votes / games) * 100) || 0;
-        results.push({ thing, votes, games, percentage });
-    }
-
-    //sort results by highest percentage
-    results.sort((a, b) => b.percentage - a.percentage);
-    res.json(results);
 });
 
 let processing = false;
