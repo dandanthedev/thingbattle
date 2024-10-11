@@ -216,6 +216,7 @@ const things = [
 ]
 
 let queue = [];
+const activeJWTS = new Set();
 
 
 async function get(item) {
@@ -251,36 +252,55 @@ app.get("/random", (req, res) => {
         item2 = things[Math.floor(Math.random() * things.length)];
     }
 
-    const jwt = signJWT({ options: [item1, item2] });
+    const id = crypto.randomBytes(64).toString('hex');
+    activeJWTS.add(id);
+
+    const jwt = signJWT({ options: [item1, item2], id });
 
     res.send([item1, item2, jwt]);
 
 });
 
 app.post("/choice", async (req, res) => {
-    const { jwt, captcha, choices } = req.body;
+    const { choice } = req.body;
+    const captchaResponse = req.headers['captcha-response'];
+    const jwt = req.headers['Authorization']?.split(" ")[1];
 
-    const captchaRes = await fetch(`https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${captcha}`, {
+    if (!choice || !captchaResponse || !jwt) return res.status(400).json({ error: "Missing parameters" });
+
+    const searchParams = new URLSearchParams();
+    searchParams.append('secret', recaptchaSecret);
+    searchParams.append('response', captchaResponse);
+
+    const captchaRes = await fetch(`https://www.google.com/recaptcha/api/siteverify?${searchParams.toString()}`, {
         method: 'POST'
     });
 
     const captchaData = await captchaRes.json();
 
     if (!captchaData.success) {
-        return res.status(400).json({ error: "Invalid captcha" });
+        return res.status(400).json({ error: "Captcha response not ok" });
     }
 
     const verified = verifyJWT(jwt);
     if (!verified) return res.json({
-        error: "Invalid JWT"
+        error: "JWT is signed incorrectly"
     })
-    const data = verified.options;
-    const choice = choices[0];
-    const other = choices[1];
-    if (!data.includes(choice) || !data.includes(other)) {
+    const data = verified?.options;
+    if (!data) return res.json({
+        error: "JWT parsed, but does not contain options"
+    })
+
+    if (!verified.id || !activeJWTS.has(verified.id)) return res.json({
+        error: "JWT expired or invalid"
+    })
+
+    const other = data.find((item) => item !== choice);
+
+    if (!data.includes(choice)) {
         return res.status(400).json({ error: "Item is not valid" });
     }
-    if (!things.includes(choice) || !things.includes(other)) {
+    if (!things.includes(choice)) {
         return res.status(400).json({ error: "Item does not exist" });
     }
 
