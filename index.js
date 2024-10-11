@@ -1,7 +1,27 @@
 import fs from 'fs';
 import express from 'express';
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+
+
+const random = crypto.randomBytes(64).toString('hex');
+
+function signJWT(val) {
+    return jwt.sign(val, random, { expiresIn: '1h' });
+}
+function verifyJWT(token) {
+    try {
+        return jwt.verify(token, random);
+    } catch {
+        return null;
+    }
+}
+
 const app = express();
+app.use(express.json());
+
 const port = process.env.PORT || 3001;
+const recaptchaSecret = "6Le2eV4qAAAAAGlnFHl7ARO0c5O7YdDpWm4kIlIT";
 const things = [
     "apple",
     "bag",
@@ -224,32 +244,57 @@ app.use((req, res, next) => {
 app.use(express.static('images'));
 
 app.get("/random", (req, res) => {
-    const item1 = things[Math.floor(Math.random() * things.length)];
-    const item2 = things[Math.floor(Math.random() * things.length)];
+    let item1 = things[Math.floor(Math.random() * things.length)];
+    let item2 = things[Math.floor(Math.random() * things.length)];
 
     while (item1 === item2) {
         item2 = things[Math.floor(Math.random() * things.length)];
     }
 
-    res.send({ item1, item2 });
+    const jwt = signJWT({ options: [item1, item2] });
+
+    res.send([item1, item2, jwt]);
 
 });
 
 app.post("/choice", async (req, res) => {
-    const { choice, other } = req.query;
-    if (!things.includes(choice)) {
-        res.status(400).json({ error: "Invalid choice" });
-        return;
+    const { jwt, captcha, choices } = req.body;
+
+    const captchaRes = await fetch(`https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${captcha}`, {
+        method: 'POST'
+    });
+
+    const captchaData = await captchaRes.json();
+
+    if (!captchaData.success) {
+        return res.status(400).json({ error: "Invalid captcha" });
     }
-    queue.push({
-        type: "choice",
-        choice,
-    });
-    queue.push({
-        type: "game",
-        choice: other
-    });
-    await processQueue();
+
+    const verified = verifyJWT(jwt);
+    if (!verified) return res.json({
+        error: "Invalid JWT"
+    })
+    const data = verified.options;
+    const choice = choices[0];
+    const other = choices[1];
+    if (!data.includes(choice) || !data.includes(other)) {
+        return res.status(400).json({ error: "Item is not valid" });
+    }
+    if (!things.includes(choice) || !things.includes(other)) {
+        return res.status(400).json({ error: "Item does not exist" });
+    }
+
+    if (captchaData.score > 0.5) {
+        queue.push({
+            type: "choice",
+            choice,
+        });
+        queue.push({
+            type: "game",
+            choice: other
+        });
+        await processQueue();
+    }
 
     //get percentage of choices
     const chosenVotes = await get(choice);
@@ -261,7 +306,7 @@ app.post("/choice", async (req, res) => {
     const otherPercentage = Math.round((otherVotes / otherGames) * 100);
 
 
-    res.send({ chosenPercentage, otherPercentage });
+    res.send([chosenPercentage, otherPercentage]);
 
 });
 
