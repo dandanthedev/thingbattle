@@ -21,7 +21,7 @@ const app = express();
 app.use(express.json());
 
 const port = process.env.PORT || 3001;
-const recaptchaSecret = "6Le2eV4qAAAAAGlnFHl7ARO0c5O7YdDpWm4kIlIT";
+const recaptchaSecret = process.env.RECAPTCHA_SECRET;
 const things = [
     "apple",
     "bag",
@@ -235,7 +235,7 @@ async function set(item, value) {
 
 //cors
 app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*'); //TODO: change to only allow certain origins
+    res.header('Access-Control-Allow-Origin', process.env.ORIGIN);
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, captcha-response, Token');
     res.header('Access-Control-Expose-Headers', 'Token');
