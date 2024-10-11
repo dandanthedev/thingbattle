@@ -245,6 +245,10 @@ app.use((req, res, next) => {
 
 app.use(express.static('images'));
 
+app.get("/", (req, res) => {
+    res.send("Hello World!");
+});
+
 app.get("/random", (req, res) => {
     let item1 = things[Math.floor(Math.random() * things.length)];
     let item2 = things[Math.floor(Math.random() * things.length)];
@@ -253,7 +257,7 @@ app.get("/random", (req, res) => {
         item2 = things[Math.floor(Math.random() * things.length)];
     }
 
-    const id = crypto.randomBytes(64).toString('hex');
+    const id = crypto.randomBytes(7).toString('hex');
     activeJWTS.add(id);
 
     const jwt = signJWT({ options: [item1, item2], id });
