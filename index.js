@@ -234,14 +234,20 @@ async function set(item, value) {
 }
 
 //cors
-app.use((req, res, next) => {
+app.options("/random", (req, res) => {
     res.header('Access-Control-Allow-Origin', process.env.ORIGIN);
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, captcha-response, Token');
-    res.header('Access-Control-Expose-Headers', 'Token');
+    res.header('Access-Control-Allow-Methods', 'GET');
 
-    next();
+    res.send();
 });
+app.options("/:choice", (req, res) => {
+    res.header('Access-Control-Allow-Origin', process.env.ORIGIN);
+    res.header('Access-Control-Allow-Methods', 'POST');
+    res.header('Access-Control-Allow-Headers', 'Captcha-Response, Token');
+
+    res.send();
+});
+
 
 app.use(express.static('images'));
 
@@ -262,8 +268,10 @@ app.get("/random", (req, res) => {
 
     const jwt = signJWT({ options: [item1, item2], id });
 
-    res.header('Token', `${jwt}`);
-    res.send([item1, item2]);
+    res.header('Access-Control-Allow-Origin', process.env.ORIGIN);
+    res.header('Access-Control-Allow-Methods', 'GET');
+
+    res.send([item1, item2, jwt]);
 
 });
 
@@ -286,9 +294,7 @@ app.get("/results", async (req, res) => {
 app.post("/:choice", async (req, res) => {
     const choice = req.params.choice;
     const captchaResponse = req.headers['captcha-response'];
-    const jwt = req.headers['authorization']?.split(" ")[1];
-
-    console.log(choice, captchaResponse, jwt);
+    const jwt = req.headers['token'];
 
     if (!choice || !captchaResponse || !jwt) return res.status(400).json({ error: "Missing parameters" });
 
@@ -349,6 +355,9 @@ app.post("/:choice", async (req, res) => {
     const chosenPercentage = Math.round((chosenVotes / chosenGames) * 100);
     const otherPercentage = Math.round((otherVotes / otherGames) * 100);
 
+    res.header('Access-Control-Allow-Origin', process.env.ORIGIN);
+    res.header('Access-Control-Allow-Methods', 'POST');
+    res.header('Access-Control-Allow-Headers', 'Captcha-Response, Token');
 
     res.send([chosenPercentage, otherPercentage]);
 
