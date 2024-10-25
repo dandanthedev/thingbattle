@@ -276,8 +276,17 @@ app.get("/random", (req, res) => {
 });
 
 
+app.options("/results", (req, res) => {
+    res.header('Access-Control-Allow-Origin', process.env.ORIGIN);
+    res.header('Access-Control-Allow-Methods', 'GET');
+
+    res.send();
+});
 
 app.get("/results", async (req, res) => {
+    res.header('Access-Control-Allow-Origin', process.env.ORIGIN);
+    res.header('Access-Control-Allow-Methods', 'GET');
+
     let results = [];
     for (const thing of things) {
         const votes = await get(thing) || 0;
