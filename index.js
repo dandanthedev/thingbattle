@@ -271,13 +271,11 @@ app.get("/random", (req, res) => {
     const id = crypto.randomBytes(7).toString('hex');
     activeJWTS.add(id);
 
-    const jwt = signJWT({ options: [item1, item2], id });
-
+    const jwt = signJWT({ options: [item1, item2], jti: id });
     res.header('Access-Control-Allow-Origin', process.env.ORIGIN);
     res.header('Access-Control-Allow-Methods', 'GET');
-
-    res.send([item1, item2, jwt]);
-
+    res.contentType('text/plain');
+    res.send(jwt);
 });
 
 
@@ -306,6 +304,10 @@ app.get("/results", async (req, res) => {
 });
 
 app.post("/:choice", async (req, res) => {
+    res.header('Access-Control-Allow-Origin', process.env.ORIGIN);
+    res.header('Access-Control-Allow-Methods', 'POST');
+    res.header('Access-Control-Allow-Headers', 'Captcha-Response, Token');
+
     const choice = req.params.choice;
     const captchaResponse = req.headers['captcha-response'];
     const jwt = req.headers['token'];
@@ -335,7 +337,7 @@ app.post("/:choice", async (req, res) => {
         error: "JWT parsed, but does not contain options"
     })
 
-    if (!verified.id || !activeJWTS.has(verified.id)) return res.json({
+    if (!verified.jti || !activeJWTS.has(verified.jti)) return res.json({
         error: "JWT expired or invalid"
     })
 
@@ -367,10 +369,6 @@ app.post("/:choice", async (req, res) => {
 
     const chosenPercentage = Math.round((chosenVotes / chosenGames) * 100);
     const otherPercentage = Math.round((otherVotes / otherGames) * 100);
-
-    res.header('Access-Control-Allow-Origin', process.env.ORIGIN);
-    res.header('Access-Control-Allow-Methods', 'POST');
-    res.header('Access-Control-Allow-Headers', 'Captcha-Response, Token');
 
     res.send([chosenPercentage, otherPercentage]);
 
