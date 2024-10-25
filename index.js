@@ -218,8 +218,12 @@ const things = [
 let queue = [];
 const activeJWTS = new Set();
 
+let dataCache = {};
 
 async function get(item) {
+    if (dataCache[item]) {
+        return dataCache[item];
+    }
     const data = await fs.promises.readFile(`/data/db.json`);
     const json = JSON.parse(data);
     return json[item] || 0;
@@ -230,6 +234,7 @@ async function set(item, value) {
     const json = JSON.parse(data);
     json[item] = value;
     await fs.promises.writeFile(`/data/db.json`, JSON.stringify(json));
+    dataCache[item] = value;
 
 }
 
