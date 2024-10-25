@@ -343,7 +343,6 @@ app.post("/:choice", async (req, res) => {
             type: "game",
             choice: other
         });
-        await processQueue();
     }
 
     //get percentage of choices
@@ -363,18 +362,8 @@ app.post("/:choice", async (req, res) => {
 
 });
 
-let processing = false;
 
 async function processQueue() {
-    //if already processing, wait untill done and return
-    if (processing) {
-        while (processing) {
-            await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-        return;
-    }
-    processing = true;
-
     while (queue.length > 0) {
         const choice = queue.shift();
 
@@ -391,11 +380,9 @@ async function processQueue() {
         }
 
     }
-
-    processing = false;
-
-
 }
+
+setInterval(processQueue, 1000 * 60 * 5); //every 5 minutes
 
 if (!fs.existsSync('/data')) {
     fs.mkdirSync('/data');
