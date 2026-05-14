@@ -1,28 +1,41 @@
-import fs from 'fs';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { createClient } from 'redis';
 
 const app = express();
+
 app.use(express.json());
 
 const port = process.env.PORT || 3001;
 const recaptchaSecret = process.env.RECAPTCHA_SECRET;
 
-// JWT secret
-const random = crypto.randomBytes(64).toString('hex');
+// ---------- REDIS ----------
 
-// ---------- HELPERS ----------
+const redis = createClient({
+    url: process.env.REDIS_URL
+});
 
-function signJWT(val) {
-    return jwt.sign(val, random, {
+redis.on('error', err => {
+    console.error('Redis error:', err);
+});
+
+await redis.connect();
+
+// ---------- JWT ----------
+
+const jwtSecret =
+    crypto.randomBytes(64).toString('hex');
+
+function signJWT(payload) {
+    return jwt.sign(payload, jwtSecret, {
         expiresIn: '1h'
     });
 }
 
 function verifyJWT(token) {
     try {
-        return jwt.verify(token, random);
+        return jwt.verify(token, jwtSecret);
     } catch {
         return null;
     }
@@ -32,46 +45,15 @@ function getMatchKey(a, b) {
     return [a, b].sort().join("__");
 }
 
-// ---------- DATABASE ----------
-
-if (!fs.existsSync('/data')) {
-    fs.mkdirSync('/data');
-}
-
-if (!fs.existsSync('/data/db.json')) {
-    fs.writeFileSync('/data/db.json', JSON.stringify({}));
-}
-
-// load db into memory once
-let db = JSON.parse(
-    fs.readFileSync('/data/db.json')
-);
-
-function get(item) {
-    return db[item] || 0;
-}
-
-async function set(item, value) {
-    db[item] = value;
-
-    await fs.promises.writeFile(
-        '/data/db.json',
-        JSON.stringify(db)
-    );
-}
-
 // ---------- DATA ----------
 
 const things = [
     // your items here
 ];
 
-// single-use JWT ids
-const activeJWTS = new Set();
-
 // ---------- CORS ----------
 
-app.options("/random", (req, res) => {
+function setCors(res, methods) {
     res.header(
         'Access-Control-Allow-Origin',
         process.env.ORIGIN
@@ -79,42 +61,17 @@ app.options("/random", (req, res) => {
 
     res.header(
         'Access-Control-Allow-Methods',
-        'GET'
-    );
-
-    res.send();
-});
-
-app.options("/:choice", (req, res) => {
-    res.header(
-        'Access-Control-Allow-Origin',
-        process.env.ORIGIN
-    );
-
-    res.header(
-        'Access-Control-Allow-Methods',
-        'POST'
+        methods
     );
 
     res.header(
         'Access-Control-Allow-Headers',
         'Captcha-Response, Token'
     );
+}
 
-    res.send();
-});
-
-app.options("/results", (req, res) => {
-    res.header(
-        'Access-Control-Allow-Origin',
-        process.env.ORIGIN
-    );
-
-    res.header(
-        'Access-Control-Allow-Methods',
-        'GET'
-    );
-
+app.options("*", (req, res) => {
+    setCors(res, 'GET, POST');
     res.send();
 });
 
@@ -129,7 +86,7 @@ app.get("/", (req, res) => {
 });
 
 // random matchup
-app.get("/random", (req, res) => {
+app.get("/random", async (req, res) => {
 
     let item1 =
         things[Math.floor(Math.random() * things.length)];
@@ -142,25 +99,22 @@ app.get("/random", (req, res) => {
             things[Math.floor(Math.random() * things.length)];
     }
 
-    const id =
-        crypto.randomBytes(7).toString('hex');
+    const jti =
+        crypto.randomBytes(12).toString('hex');
 
-    activeJWTS.add(id);
+    // store active token in redis
+    await redis.setEx(
+        `jwt:${jti}`,
+        60 * 60,
+        '1'
+    );
 
     const token = signJWT({
         options: [item1, item2],
-        jti: id
+        jti
     });
 
-    res.header(
-        'Access-Control-Allow-Origin',
-        process.env.ORIGIN
-    );
-
-    res.header(
-        'Access-Control-Allow-Methods',
-        'GET'
-    );
+    setCors(res, 'GET');
 
     res.contentType('text/plain');
 
@@ -170,37 +124,38 @@ app.get("/random", (req, res) => {
 // global rankings
 app.get("/results", async (req, res) => {
 
-    res.header(
-        'Access-Control-Allow-Origin',
-        process.env.ORIGIN
+    setCors(res, 'GET');
+
+    const results = await Promise.all(
+        things.map(async thing => {
+
+            const [
+                votes,
+                games
+            ] = await Promise.all([
+                redis.get(`votes:${thing}`),
+                redis.get(`games:${thing}`)
+            ]);
+
+            const voteCount =
+                Number(votes || 0);
+
+            const gameCount =
+                Number(games || 0);
+
+            return {
+                thing,
+                votes: voteCount,
+                games: gameCount,
+                percentage:
+                    gameCount > 0
+                        ? Math.round(
+                            (voteCount / gameCount) * 100
+                        )
+                        : 0
+            };
+        })
     );
-
-    res.header(
-        'Access-Control-Allow-Methods',
-        'GET'
-    );
-
-    const results = [];
-
-    for (const thing of things) {
-
-        const votes = get(thing) || 0;
-
-        const games =
-            get(`${thing}-games`) || 0;
-
-        const percentage =
-            games > 0
-                ? Math.round((votes / games) * 100)
-                : 0;
-
-        results.push({
-            thing,
-            votes,
-            games,
-            percentage
-        });
-    }
 
     results.sort(
         (a, b) => b.percentage - a.percentage
@@ -209,23 +164,10 @@ app.get("/results", async (req, res) => {
     res.json(results);
 });
 
-// vote endpoint
+// vote
 app.post("/:choice", async (req, res) => {
 
-    res.header(
-        'Access-Control-Allow-Origin',
-        process.env.ORIGIN
-    );
-
-    res.header(
-        'Access-Control-Allow-Methods',
-        'POST'
-    );
-
-    res.header(
-        'Access-Control-Allow-Headers',
-        'Captcha-Response, Token'
-    );
+    setCors(res, 'POST');
 
     const choice = req.params.choice;
 
@@ -283,10 +225,11 @@ app.post("/:choice", async (req, res) => {
         });
     }
 
-    if (
-        !verified.jti ||
-        !activeJWTS.has(verified.jti)
-    ) {
+    // check single-use token
+    const tokenExists =
+        await redis.del(`jwt:${verified.jti}`);
+
+    if (!tokenExists) {
         return res.status(400).json({
             error: "JWT expired or already used"
         });
@@ -294,13 +237,10 @@ app.post("/:choice", async (req, res) => {
 
     const options = verified.options;
 
-    if (!options) {
-        return res.status(400).json({
-            error: "JWT missing options"
-        });
-    }
-
-    if (!options.includes(choice)) {
+    if (
+        !options ||
+        !options.includes(choice)
+    ) {
         return res.status(400).json({
             error: "Invalid choice"
         });
@@ -315,74 +255,45 @@ app.post("/:choice", async (req, res) => {
     const other =
         options.find(item => item !== choice);
 
-    // only count valid captcha scores
+    // only count good captcha scores
     if (captchaData.score > 0.5) {
 
-        // winner votes
-        const winnerVotes =
-            get(choice) || 0;
+        const multi = redis.multi();
 
-        await set(
-            choice,
-            winnerVotes + 1
-        );
+        // winner vote
+        multi.incr(`votes:${choice}`);
 
         // games played
-        const winnerGames =
-            get(`${choice}-games`) || 0;
+        multi.incr(`games:${choice}`);
+        multi.incr(`games:${other}`);
 
-        const loserGames =
-            get(`${other}-games`) || 0;
-
-        await set(
-            `${choice}-games`,
-            winnerGames + 1
-        );
-
-        await set(
-            `${other}-games`,
-            loserGames + 1
-        );
-
-        // matchup tracking
-        const key =
+        // matchup
+        const matchupKey =
             getMatchKey(choice, other);
 
-        const matchup =
-            get(`matchup-${key}`) || {
-                [choice]: 0,
-                [other]: 0
-            };
-
-        matchup[choice] =
-            (matchup[choice] || 0) + 1;
-
-        await set(
-            `matchup-${key}`,
-            matchup
+        multi.hIncrBy(
+            `matchup:${matchupKey}`,
+            choice,
+            1
         );
 
-        // invalidate token
-        activeJWTS.delete(
-            verified.jti
-        );
+        await multi.exec();
     }
 
-    // return matchup percentages
-    const key =
+    // matchup stats
+    const matchupKey =
         getMatchKey(choice, other);
 
     const matchup =
-        get(`matchup-${key}`) || {
-            [choice]: 0,
-            [other]: 0
-        };
+        await redis.hGetAll(
+            `matchup:${matchupKey}`
+        );
 
     const chosenVotes =
-        matchup[choice] || 0;
+        Number(matchup[choice] || 0);
 
     const otherVotes =
-        matchup[other] || 0;
+        Number(matchup[other] || 0);
 
     const total =
         chosenVotes + otherVotes;
@@ -397,7 +308,7 @@ app.post("/:choice", async (req, res) => {
     const otherPercentage =
         100 - chosenPercentage;
 
-    res.send([
+    res.json([
         chosenPercentage,
         otherPercentage
     ]);
